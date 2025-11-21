@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FocusType: Hardcore Ranked (流暢版)</title>
+    <title>FocusType: Hardcore Ranked (Enter版)</title>
     <style>
         :root {
             --bg-color: #f0f2f5;
@@ -194,7 +194,7 @@
 
         <div class="word-box" id="word-box" onclick="document.getElementById('type-input').focus()"></div>
 
-        <input type="text" id="type-input" placeholder="輸入文字後按空白鍵..." autocomplete="off" spellcheck="false">
+        <input type="text" id="type-input" placeholder="輸入文字後按 Enter..." autocomplete="off" spellcheck="false">
 
         <div id="results-modal" class="modal-overlay">
             <div class="result-title" id="res-title">Finished!</div>
@@ -264,23 +264,20 @@
         let startTime = null;
         let timerInterval = null;
         let gameActive = false;
-        let totalKeystrokes = 0;
-        let totalMistakes = 0;
-        let correctCharCount = 0;
-        let isComposing = false; // IME Flag
+        let correctWordsCount = 0; // 改為計算「正確的詞彙數量」
+        let correctCharCount = 0;  // 用於計算 WPM
         
         let bots = [];
         let botTimers = [];
         let userRP = null; 
 
-        // --- Math Formulas (Adjusted for Chinese Typing) ---
         function getLadderWPM(rp) {
-            if (rp < 200) return 5 + (rp / 200) * 10;          // 5-15 WPM
-            if (rp < 400) return 15 + ((rp - 200) / 200) * 15; // 15-30 WPM
-            if (rp < 600) return 30 + ((rp - 400) / 200) * 15; // 30-45 WPM
-            if (rp < 800) return 45 + ((rp - 600) / 200) * 15; // 45-60 WPM
-            if (rp < 1000) return 60 + ((rp - 800) / 200) * 20; // 60-80 WPM
-            if (rp < 1500) return 80 + ((rp - 1000) / 500) * 20; // 80-100 WPM
+            if (rp < 200) return 5 + (rp / 200) * 10;          
+            if (rp < 400) return 15 + ((rp - 200) / 200) * 15; 
+            if (rp < 600) return 30 + ((rp - 400) / 200) * 15; 
+            if (rp < 800) return 45 + ((rp - 600) / 200) * 15; 
+            if (rp < 1000) return 60 + ((rp - 800) / 200) * 20; 
+            if (rp < 1500) return 80 + ((rp - 1000) / 500) * 20; 
             return 100 + ((rp - 1500) / 100) * 5;
         }
 
@@ -332,7 +329,6 @@
                 nameEl.innerText = rank.name;
                 nameEl.style.color = rank.color;
                 
-                containerEl.classList.remove('is-king', 'is-god');
                 if(rank.name === "King") containerEl.classList.add('is-king');
                 if(rank.name === "God") containerEl.classList.add('is-god');
 
@@ -355,8 +351,7 @@
             currentWords = shuffle(wordPool).slice(0, SESSION_LENGTH);
             currentIndex = 0;
             startTime = null;
-            totalKeystrokes = 0;
-            totalMistakes = 0;
+            correctWordsCount = 0;
             correctCharCount = 0;
             gameActive = false;
             if(timerInterval) clearInterval(timerInterval);
@@ -365,7 +360,7 @@
             inputEl.value = '';
             inputEl.disabled = false;
             inputEl.focus();
-            inputEl.classList.remove('input-error', 'shake');
+            inputEl.classList.remove('input-error');
             
             document.getElementById('results-modal').classList.remove('visible');
             document.getElementById('res-acc-note').style.display = 'none';
@@ -447,10 +442,6 @@
 
         const inputEl = document.getElementById('type-input');
 
-        // IME Handling
-        inputEl.addEventListener('compositionstart', () => { isComposing = true; });
-        inputEl.addEventListener('compositionend', () => { isComposing = false; });
-        
         inputEl.addEventListener('input', (e) => {
             if (!startTime && e.target.value.length > 0) {
                 gameActive = true;
@@ -463,24 +454,12 @@
                 }, 1000);
                 startBots();
             }
-
-            const typed = e.target.value;
-            const target = currentWords[currentIndex];
-
-            if (target.startsWith(typed.trim())) {
-                inputEl.classList.remove('input-error');
-            } else {
-                inputEl.classList.add('input-error');
-            }
         });
 
         inputEl.addEventListener('keydown', (e) => {
-            // IME Protection: Ignore space if composing
-            if (isComposing) return;
-
-            if (e.code === 'Space') {
-                // Always prevent space from being typed into the box
-                e.preventDefault();
+            // === 核心修改：改用 Enter 鍵送出 ===
+            if (e.key === 'Enter') {
+                e.preventDefault(); // 防止表單送出或其他 Enter 行為
 
                 if (!gameActive) return;
                 
@@ -488,16 +467,16 @@
                 const target = currentWords[currentIndex];
                 const spans = document.querySelectorAll('.word');
 
-                // PERMISSIVE MODE: Allow submit as long as it's not empty
+                // 只要有輸入內容，按 Enter 就算送出 (無論對錯)
                 if (val.length > 0) {
                     if (val === target) {
-                        // Correct
+                        // 正確：標記綠色，增加正確計數
                         spans[currentIndex].classList.add('correct');
-                        correctCharCount += target.length; 
+                        correctWordsCount++; 
+                        correctCharCount += target.length; // 用於計算 WPM
                     } else {
-                        // Incorrect (Skipped/Wrong)
+                        // 錯誤：標記紅色刪除線，不計分
                         spans[currentIndex].classList.add('incorrect');
-                        totalMistakes++; 
                     }
                     
                     spans[currentIndex].classList.remove('active');
@@ -527,11 +506,12 @@
             const endTime = new Date();
             const minutes = (endTime - startTime) / 60000;
             
-            // Anti-Cheat WPM: Based on CORRECT chars only
+            // WPM 計算：只算「打對的字元數」
             const wpm = Math.round(((correctCharCount + SESSION_LENGTH) / 5) / minutes);
             const safeWPM = isFinite(wpm) ? wpm : 0;
 
-            const accuracy = totalKeystrokes > 0 ? Math.round(((totalKeystrokes - totalMistakes)/totalKeystrokes)*100) : 0;
+            // 準確率計算：直接看 (正確詞數 / 總詞數)，不再管按鍵次數
+            const accuracy = Math.round((correctWordsCount / SESSION_LENGTH) * 100);
 
             let place = 1;
             bots.forEach(b => { if (b.progress >= SESSION_LENGTH) place++; });
